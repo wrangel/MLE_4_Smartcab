@@ -2,6 +2,7 @@
 
 import random
 import math
+import csv
 from environment import Agent, Environment
 from planner import RoutePlanner
 from simulator import Simulator
@@ -40,10 +41,12 @@ class LearningAgent(Agent):
 		''' Initialize performance metrics basics
 			- Initialize trial counter
 			- Initialize successful trial counter
-			- Initialize successful trial w/o negative reward counter '''
+			- Initialize successful trial w/o negative reward counter
+			- V2: initialize the tracker list for the last ten trials '''
 		self.number_of_trials = 0
 		self.number_of_successful_trials = 0
 		self.number_of_successful_trials_wo_n_r = 0
+		self.tracker = [] 
 
 	def reset(self, destination=None):
 		self.planner.route_to(destination)
@@ -52,29 +55,13 @@ class LearningAgent(Agent):
 			- Update the number of trials
 			- Reset the flag for negative rewards per trial	'''
 		self.number_of_trials += 1
-		self.negative_rewards = 'No'		
-
+		self.negative_rewards = 'No'
+		
 	def update(self, t):
 		# Gather inputs
 		self.next_waypoint = self.planner.next_waypoint()  # from route planner, also displayed by simulator
 		inputs = self.env.sense(self)
 		deadline = self.env.get_deadline(self)
-		
-		
-		''' BASIC AGENT SET-UP -- START '''
-		#''' Basic agent state consisting of:
-		#	- Planner waypoint indication
-		#	- Intersection state (traffic light, presence of cars)
-		#	- Current deadline / time steps remaining '''
-		#self.state = (self.next_waypoint, inputs, deadline)
-		
-		# TODO: Select action according to your policy
-		#''' - State all possible actions for the agent
-		#    - Select random action out of the possible actions '''
-		#actions = self.env.valid_actions
-		#action = actions[int(math.floor(random.uniform(0, len(actions))))]
-		''' BASIC AGENT SET-UP -- END '''
-		
 		
 		# TODO: Update state 
 		''' The state consists of the relevant inputs
@@ -106,15 +93,15 @@ class LearningAgent(Agent):
 			- Show if agent has obtained negative rewards during trial
 			- Share of successful trials
 			- Share of successful trials without negative rewards '''
-		if reward >= 10:
+		if reward > 2:
 			self.number_of_successful_trials += 1
 			if self.negative_rewards == 'No':
 				self.number_of_successful_trials_wo_n_r += 1
 			print("\nAlpha: {}, Gamma: {}, Epsilon: {}".format(str(self.alpha),str(self.gamma),str(self.epsilon)))
 			print("Has agent obtained negative rewards during this trial? {}".format(self.negative_rewards))
 			print("{} out of {} trials were successful ({percent:.2%})".format(str(self.number_of_successful_trials), str(self.number_of_trials), percent=float(self.number_of_successful_trials)/self.number_of_trials))
-			print("{} out of {} successful trials were without negative rewards ({percent:.2%})\n".format(str(self.number_of_successful_trials_wo_n_r), str(self.number_of_successful_trials), percent=float(self.number_of_successful_trials_wo_n_r)/self.number_of_successful_trials))
-	   
+			print("{} out of {} successful trials were without negative rewards ({percent:.2%})\n".format(str(self.number_of_successful_trials_wo_n_r), str(self.number_of_successful_trials), percent=float(self.number_of_successful_trials_wo_n_r)/self.number_of_successful_trials))				   	
+	
 		# TODO: Learn policy based on state, action, reward
 		''' Q-learning
 			- Evaluate Bellman equations from data: Estimate Q from transitions
@@ -134,11 +121,28 @@ class LearningAgent(Agent):
 			learning_reward = reward - 10 ## (5)
 		self.Q_matrix[state_t0][action] = Q_t0 + self.alpha * (learning_reward + self.gamma * Q_t1 - Q_t0) ## (6)
 		
-		#if reward < 0:				## debug
-		#	print(action, reward)	## debug
-		#	print(state_t0)			## debug
-		#	print(self.Q_matrix)	## debug
-		#	print("-----------")  	## debug
+		''' V2 START: scrutinize the last 10 trials for negative rewards 
+			- question: what are the reasons behind negative rewards? '''	
+		if self.number_of_trials > 90:
+			print_action = action
+			if action == None:
+				print_action = 'None'
+			self.tracker.append([self.number_of_trials, t, state_t0, print_action, reward, Q_t0, self.Q_matrix[state_t0][action], self.Q_matrix[state_t0][None], self.Q_matrix[state_t0]['forward'], self.Q_matrix[state_t0]['right'], self.Q_matrix[state_t0]['left']])
+					
+		if self.number_of_trials == 100:
+			print(self.tracker)
+			''' uncomment the following section to produce a file output '''
+			#outfile  = open("/path/to/file/smartcab_scrutiny.csv", "wb") 
+			#writer = csv.writer(outfile, delimiter=';')
+			#for row in self.tracker:
+			#	writer.writerow(row)
+		''' V2 END '''		
+
+		#if reward < 0:
+		#	print(self.number_of_trials, t, action, reward)	## debug
+		#	print(state_t0)									## debug
+		#	print(self.Q_matrix)							## debug
+		#	print("-----------")  							## debug
 
 	''' Function to determine the best action at a given time, based on Q values
 		- If the state is not known yet, initializes the action-reward functions to Q_0, and in this case chooses a random action
@@ -170,7 +174,7 @@ def run():
 		# Set up environment and agent
 		e = Environment()  # create environment (also adds some dummy traffic)
 		a = e.create_agent(LearningAgent)  # create agent
-		e.set_primary_agent(a, enforce_deadline=False)  # specify agent to track
+		e.set_primary_agent(a, enforce_deadline=True)  # specify agent to track
 		# NOTE: You can set enforce_deadline=False while debugging to allow longer trials
 
 		# Now simulate it
